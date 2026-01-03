@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <title>EVENT HORIZON // 视界穿越</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  
+  <!-- 核心库：Three.js (3D), GSAP (动画) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  
+  <!-- 字体 -->
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Noto+Sans+Arabic:wght@400;700&display=swap" rel="stylesheet">
+
+  <style>
+    /* ========== 0. 宇宙物理法则 (CSS Reset) ========== */
+    :root {
+      --void: #000000;
+      --neon: #00f3ff;
+      --neon-sec: #bc13fe;
+      --alert: #ff003c;
+      --glass: rgba(10, 15, 30, 0.65);
+      --font: 'Rajdhani', sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+    
+    body {
+      background-color: var(--void);
+      color: #fff;
+      font-family: var(--font);
+      overflow: hidden; /* 必须隐藏，我们接管滚动 */
+      height: 100vh; width: 100vw;
+    }
+
+    /* 维语适配 */
+    html[lang="ug"] body { font-family: 'Noto Sans Arabic', sans-serif; }
+
+    /* ========== 1. 视觉层 ========== */
+    #canvas-container {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 1; pointer-events: none;
+    }
+
+    /* 扫描线滤镜 */
+    .scanlines {
+      position: fixed; inset: 0; z-index: 90; pointer-events: none; opacity: 0.3;
+      background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2));
+      background-size: 100% 4px;
+    }
+
+    /* ========== 2. UI 界面层 (HUD) ========== */
+    #ui-layer {
+      position: fixed; inset: 0; z-index: 100; pointer-events: none;
+    }
+
+    nav {
+      position: absolute; top: 0; left: 0; width: 100%; padding: 30px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: auto;
+    }
+    
+    .brand { font-size: 24px; font-weight: 700; letter-spacing: 4px; color: var(--neon); text-shadow: 0 0 10px var(--neon); }
+    
+    .nav-controls { display: flex; gap: 15px; }
+    .hud-btn {
+      background: rgba(0,0,0,0.6); border: 1px solid var(--neon); color: var(--neon);
+      padding: 5px 15px; font-family: var(--font); font-weight: bold; cursor: pointer;
+      transition: 0.3s; pointer-events: auto;
+    }
+    .hud-btn:hover { background: var(--neon); color: #000; box-shadow: 0 0 15px var(--neon); }
+
+    /* 深度仪表盘 */
+    .depth-meter {
+      position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+      text-align: right; color: var(--neon-sec); font-size: 12px;
+    }
+    .depth-val { font-size: 24px; font-weight: bold; display: block; }
+
+    /* ========== 3. 3D 内容容器 (The Void) ========== */
+    /* 
+       这里不使用传统的 HTML 流式布局。
+       所有 .node 元素初始都绝对定位在屏幕正中央 (top:50%, left:50%)。
+       JS 会根据 scrollZ 计算它们的 scale (大小) 和 opacity (透明度)，
+       模拟它们从远处飞来的效果。
+    */
+    #scene-content {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 10; pointer-events: none; perspective: 1000px;
+    }
+
+    .node {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 500px; height: auto;
+      transform: translate(-50%, -50%); /* 初始居中 */
+      will-change: transform, opacity, filter;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center;
+      opacity: 0; /* 默认隐藏，JS接管 */
+    }
+
+    .node-content {
+      width: 100%;
+      background: var(--glass);
+      border: 1px solid rgba(0, 243, 255, 0.2);
+      padding: 30px;
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+      pointer-events: auto; /* 允许交互 */
+      transition: border-color 0.3s, box-shadow 0.3s;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    .node-content:hover { border-color: var(--neon); box-shadow: 0 0 40px rgba(0,243,255,0.15); }
+
+    /* 内部排版 */
+    h1 { font-size: 80px; line-height: 0.9; text-transform: uppercase; text-shadow: 0 0 20px rgba(255,255,255,0.5); margin-bottom: 20px; }
+    h2 { color: var(--neon); margin-bottom: 15px; letter-spacing: 2px; font-size: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; display: inline-block;}
+    p { color: #ccc; line-height: 1.6; font-size: 16px; }
+    .meta-tag { color: var(--neon-sec); font-size: 12px; letter-spacing: 2px; margin-bottom: 5px; display: block; }
+    img { width: 100%; border-radius: 4px; margin-bottom: 15px; border: 1px solid #333; object-fit: cover; height: 250px; }
+
+    /* 特殊节点：Hero */
+    .hero-node .node-content { background: transparent; border: none; backdrop-filter: none; box-shadow: none; }
+    .hero-node h1 { font-size: 100px; mix-blend-mode: overlay; opacity: 0.9; }
+
+    /* 滚动提示 */
+    .scroll-hint {
+      position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%);
+      color: #666; font-size: 12px; letter-spacing: 4px; animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+    /* ========== 4. 管理员弹窗 (Admin) ========== */
+    .admin-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 200;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: 0.3s; backdrop-filter: blur(5px);
+    }
+    .admin-overlay.open { opacity: 1; pointer-events: auto; }
+    .admin-panel {
+      width: 400px; background: #050508; border: 1px solid var(--neon-sec); padding: 30px;
+      box-shadow: 0 0 50px rgba(188, 19, 254, 0.2);
+    }
+    .input-group { margin-bottom: 15px; }
+    .input-group label { display: block; color: #888; font-size: 12px; margin-bottom: 5px; }
+    .sys-input {
+      width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px;
+      font-family: var(--font); outline: none;
+    }
+    .sys-input:focus { border-color: var(--neon); }
+    .sys-btn {
+      width: 100%; padding: 10px; background: var(--neon-sec); border: none; color: #fff;
+      font-weight: bold; cursor: pointer; margin-top: 10px;
+    }
+
+    /* Mobile */
+    @media (max-width: 768px) {
+      .node { width: 85%; }
+      h1 { font-size: 50px; }
+      .hero-node h1 { font-size: 60px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 1. 3D 宇宙背景 -->
+  <div id="canvas-container"></div>
+  <div class="scanlines"></div>
+
+  <!-- 2. UI 界面 -->
+  <nav id="ui-layer">
+    <div class="brand">EVENT_HORIZON</div>
+    
+    <div class="nav-controls">
+      <button class="hud-btn" onclick="toggleLang()">EN/UG</button>
+      <button class="hud-btn" onclick="openAdmin()">⚙️ ADMIN</button>
+    </div>
+
+    <div class="depth-meter">
+      DEPTH
+      <span class="depth-val" id="depth-display">0</span>
+      AU
+    </div>
+  </nav>
+
+  <div class="scroll-hint" id="hint">SCROLL TO ENGAGE THRUSTERS</div>
+
+  <!-- 3. 核心内容容器 (JS将根据数据生成这里的节点) -->
+  <div id="scene-content">
+    <!-- 内容将由 JS 动态插入，以支持数据持久化 -->
+  </div>
+
+  <!-- 4. 管理员后台 -->
+  <div class="admin-overlay" id="adminModal">
+    <div class="admin-panel">
+      <h3 style="color:var(--neon-sec); margin-bottom:20px;">// SYSTEM_OVERRIDE</h3>
+      
+      <!-- 登录界面 -->
+      <div id="admin-login">
+        <div class="input-group">
+          <label>ACCESS CODE</label>
+          <input type="password" class="sys-input" id="adminPass" placeholder="admin123">
+        </div>
+        <button class="sys-btn" onclick="loginAdmin()">AUTHENTICATE</button>
+      </div>
+
+      <!-- 上传界面 -->
+      <div id="admin-upload" style="display:none;">
+        <div class="input-group">
+          <label>MODULE TYPE</label>
+          <select class="sys-input" id="uploadType">
+            <option value="gallery">VISUAL MEMORY (相册)</option>
+            <option value="timeline">DATA LOG (日志)</option>
+            <option value="family">CORE LINK (家人)</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>TITLE</label>
+          <input type="text" class="sys-input" id="uploadTitle">
+        </div>
+        <div class="input-group">
+          <label>DESCRIPTION</label>
+          <input type="text" class="sys-input" id="uploadDesc">
+        </div>
+        <div class="input-group">
+          <label>IMAGE SOURCE</label>
+          <div style="border:1px dashed #444; padding:10px; text-align:center; cursor:pointer;" onclick="document.getElementById('fileInput').click()">
+            [ CLICK TO SELECT FILE ]
+          </div>
+          <input type="file" id="fileInput" hidden onchange="handleFileSelect()">
+          <img id="previewImg" style="width:50px; height:50px; object-fit:cover; margin-top:10px; display:none; border:1px solid var(--neon);">
+        </div>
+        <button class="sys-btn" onclick="saveData()">UPLOAD TO SERVER</button>
+      </div>
+      
+      <button class="sys-btn" style="background:#333; margin-top:10px;" onclick="closeAdmin()">CLOSE CONNECTION</button>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================
+       PART 1: 数据层 (Database & State)
+       整合之前版本的数据结构
+    ========================================= */
+    const defaultData = {
+      lang: 'zh-CN',
+      hero: { title: "CYBER\nNOMAD", desc: "Reality is just a construct of parameters." },
+      // 数据节点：每个节点都有一个固定的 Z 轴位置
+      // 越大的 Z，越在深处
+      nodes: [
+        { type: 'hero', z: 0, title: "CYBER\nNOMAD", desc: "Reality is just a construct of parameters." },
+        { type: 'text', z: 2000, title: "IDENTITY // 身份", desc: "Welcome to the digital void. I construct reality through code." },
+        { type: 'img', z: 3500, title: "MEMORY: NEON RAIN", src: "https://images.pexels.com/photos/2614818/pexels-photo-2614818.jpeg?auto=compress&cs=tinysrgb&w=600" },
+        { type: 'text', z: 5000, title: "ORIGIN // 2021", desc: "First line of code written. The singularity began here." },
+        { type: 'img', z: 6500, title: "CORE LINK: FAMILY", src: "https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=400" },
+        { type: 'text', z: 8000, title: "مەن ھەققىدە", desc: "بۇ مېنىڭ رەقەملىك دۇنيایىم. كود ۋە سەنئەت ئارقىلىق رېئاللىقنى قايتا قۇرىمەن." }, // 维语
+        { type: 'text', z: 10000, title: "CONTACT", desc: "Signal lost... Send data to re-establish link." }
+      ]
+    };
+
+    // 加载本地数据
+    let db = JSON.parse(localStorage.getItem('void_db')) || defaultData;
+    let currentLang = localStorage.getItem('void_lang') || 'zh-CN';
+
+    /* =========================================
+       PART 2: 3D 引擎 (Three.js)
+       创建黑洞、星空、和虫洞效果
+    ========================================= */
+    const canvas = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.0015); // 黑色迷雾
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 20000);
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    canvas.appendChild(renderer.domElement);
+
+    // 1. 星空粒子 (Star Field)
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 8000;
+    const posArray = new Float32Array(starCount * 3);
+    for(let i = 0; i < starCount * 3; i+=3) {
+      posArray[i] = (Math.random() - 0.5) * 5000; // X
+      posArray[i+1] = (Math.random() - 0.5) * 5000; // Y
+      posArray[i+2] = Math.random() * 10000 - 5000; // Z 分布在深处
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    // 2. 虫洞环 (Tunnel Rings) - 增加速度感
+    const tunnelGroup = new THREE.Group();
+    const ringGeo = new THREE.TorusGeometry(400, 2, 16, 100);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff, transparent: true, opacity: 0.15 });
+    
+    for(let i=0; i<20; i++) {
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.z = i * 1000; // 每隔1000单位一个环
+      tunnelGroup.add(ring);
+    }
+    scene.add(tunnelGroup);
+
+    // 3. 奇点核心 (Singularity Core) - 一个旋转的线框球体
+    const coreGeo = new THREE.IcosahedronGeometry(100, 1);
+    const coreMat = new THREE.MeshBasicMaterial({ color: 0xbc13fe, wireframe: true, transparent: true, opacity: 0.3 });
+    const core = new THREE.Mesh(coreGeo, coreMat);
+    core.position.z = 15000; // 在非常深的地方
+    scene.add(core);
+
+    /* =========================================
+       PART 3: 虚拟滚动与飞行控制
+    ========================================= */
+    let scrollZ = 0;       // 当前飞船位置 (Z轴)
+    let targetZ = 0;       // 目标位置
+    let maxZ = 12000;      // 宇宙边界
+    const speed = 0.06;    // 惯性系数
+
+    // 监听输入
+    window.addEventListener('wheel', (e) => {
+      targetZ += e.deltaY * 3; 
+      targetZ = Math.max(0, targetZ); // 不允许倒车回负数
+      hideHint();
+    });
+
+    // 触摸支持
+    let touchY = 0;
+    window.addEventListener('touchstart', e => touchY = e.touches[0].clientY);
+    window.addEventListener('touchmove', e => {
+      const delta = touchY - e.touches[0].clientY;
+      targetZ += delta * 4;
+      targetZ = Math.max(0, targetZ);
+      touchY = e.touches[0].clientY;
+      hideHint();
+    });
+
+    function hideHint() { document.getElementById('hint').style.opacity = 0; }
+
+    /* =========================================
+       PART 4: DOM 渲染与同步
+       将 HTML 元素映射到 3D 空间坐标
+    ========================================= */
+    const container = document.getElementById('scene-content');
+    
+    // 根据 DB 渲染 HTML 节点
+    function initNodes() {
+      container.innerHTML = '';
+      // 动态计算最大深度
+      maxZ = Math.max(...db.nodes.map(n => n.z)) + 2000;
+
+      db.nodes.forEach(item => {
+        const div = document.createElement('div');
+        div.className = item.type === 'hero' ? 'node hero-node' : 'node';
+        div.dataset.z = item.z;
+        
+        let innerHTML = '';
+        
+        if(item.type === 'hero') {
+          innerHTML = `<div class="node-content"><h1>${item.title}</h1><p style="color:var(--neon)">${item.desc}</p></div>`;
+        } else if(item.type === 'text') {
+          innerHTML = `
+            <div class="node-content">
+              <span class="meta-tag">LOG_ENTRY: ${item.z}</span>
+              <h2>${item.title}</h2>
+              <p>${item.desc}</p>
+            </div>`;
+        } else if(item.type === 'img') {
+          innerHTML = `
+            <div class="node-content">
+              <span class="meta-tag">VISUAL_DATA</span>
+              <img src="${item.src}">
+              <h2>${item.title}</h2>
+            </div>`;
+        }
+
+        div.innerHTML = innerHTML;
+        container.appendChild(div);
+      });
+      
+      applyLangClass();
+    }
+
+    // 动画主循环
+    function animate() {
+      // 1. 物理惯性计算
+      scrollZ += (targetZ - scrollZ) * speed;
+      
+      // 2. 更新 HUD
+      document.getElementById('depth-display').innerText = Math.floor(scrollZ);
+
+      // 3. 移动 Three.js 摄像机 (产生飞行感)
+      camera.position.z = scrollZ; 
+      
+      // 移动背景物体 (制造无限循环幻觉)
+      // 星星循环逻辑：如果星星跑到摄像机后面了，把它扔到最前面去
+      const pos = starGeo.attributes.position.array;
+      for(let i=2; i<starCount*3; i+=3) {
+        if(pos[i] < camera.position.z - 1000) {
+          pos[i] += 10000; // 循环距离
+        }
+      }
+      starGeo.attributes.position.needsUpdate = true;
+
+      // 虫洞环循环
+      tunnelGroup.children.forEach(ring => {
+        if(ring.position.z < camera.position.z - 500) {
+          ring.position.z += 20000;
+        }
+        ring.rotation.z += 0.005; // 旋转特效
+      });
+
+      // 奇点核心自转
+      core.rotation.x += 0.01;
+      core.rotation.y += 0.01;
+      core.position.z = camera.position.z + 8000; // 永远在前方
+
+      // 4. 更新 HTML 节点 (视差特效核心)
+      const domNodes = document.querySelectorAll('.node');
+      domNodes.forEach(node => {
+        const nodeZ = parseInt(node.dataset.z);
+        const dist = nodeZ - scrollZ; // 距离摄像机的距离
+
+        // 只有在视野范围内的节点才显示
+        if (dist > -1000 && dist < 4000) {
+          node.style.display = 'flex';
+          
+          // 计算视差缩放：距离越近(dist小)，物体越大
+          // formula: scale = 1000 / (dist + 1000) roughly
+          // 为了防止穿模，我们在非常近的时候淡出
+          
+          // 归一化距离
+          const progress = 1 - (dist / 4000); // 0(远) -> 1(近)
+          
+          let scale = progress * progress * 2; // 非线性变大
+          let opacity = 1;
+          let blur = 0;
+
+          // 远处：模糊、透明、小
+          if(dist > 1000) {
+            opacity = 1 - (dist - 1000) / 3000;
+            blur = (dist - 1000) / 100;
+          }
+          
+          // 极近处 (即将飞过)：迅速放大并透明
+          if(dist < 200) {
+            opacity = (dist + 500) / 700; 
+            scale *= 1.5; 
+            blur = (200 - dist) / 10;
+          }
+
+          node.style.transform = `translate(-50%, -50%) scale(${Math.max(0, scale)})`;
+          node.style.opacity = Math.max(0, opacity);
+          node.style.filter = `blur(${Math.max(0, blur)}px)`;
+          
+          // 随机微小旋转，增加漂浮感
+          const floatY = Math.sin(Date.now() * 0.001 + nodeZ) * 10;
+          node.style.marginTop = floatY + 'px';
+
+        } else {
+          node.style.display = 'none';
+        }
+      });
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    /* =========================================
+       PART 5: 后台与功能函数
+    ========================================= */
+    
+    // 初始化
+    initNodes();
+    animate();
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 语言切换
+    function toggleLang() {
+      currentLang = currentLang === 'zh-CN' ? 'ug' : 'zh-CN';
+      localStorage.setItem('void_lang', currentLang);
+      applyLangClass();
+    }
+
+    function applyLangClass() {
+      const html = document.documentElement;
+      if(currentLang === 'ug') {
+        html.setAttribute('lang', 'ug');
+        html.setAttribute('dir', 'rtl');
+      } else {
+        html.setAttribute('lang', 'zh-CN');
+        html.setAttribute('dir', 'ltr');
+      }
+    }
+    applyLangClass();
+
+    // 后台逻辑
+    let tempFile = null;
+    function openAdmin() { document.getElementById('adminModal').classList.add('open'); }
+    function closeAdmin() { document.getElementById('adminModal').classList.remove('open'); }
+    
+    function loginAdmin() {
+      if(document.getElementById('adminPass').value === 'admin123') {
+        document.getElementById('admin-login').style.display = 'none';
+        document.getElementById('admin-upload').style.display = 'block';
+      } else {
+        alert('ACCESS DENIED // 密码错误');
+      }
+    }
+
+    function handleFileSelect() {
+      const file = document.getElementById('fileInput').files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        tempFile = e.target.result;
+        document.getElementById('previewImg').src = tempFile;
+        document.getElementById('previewImg').style.display = 'block';
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function saveData() {
+      const title = document.getElementById('uploadTitle').value;
+      const desc = document.getElementById('uploadDesc').value;
+      const type = document.getElementById('uploadType').value;
+      
+      // 计算新节点的位置 (当前最大深度 + 1500)
+      const newZ = Math.max(...db.nodes.map(n => n.z)) + 1500;
+      
+      let newNode = { z: newZ, title, desc };
+      
+      if(type === 'gallery' || type === 'family') {
+        if(!tempFile) return alert('IMAGE REQUIRED');
+        newNode.type = 'img';
+        newNode.src = tempFile;
+      } else {
+        newNode.type = 'text';
+      }
+
+      db.nodes.push(newNode);
+      localStorage.setItem('void_db', JSON.stringify(db)); // 保存
+      
+      initNodes(); // 重新渲染
+      closeAdmin();
+      alert('DATA UPLOADED TO VOID // 上传成功');
+    }
+
+    // 音效 (简单的 Web Audio API 蜂鸣)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playBeep() {
+      if(audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+      osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
+    
+    document.addEventListener('click', playBeep);
+
+  </script>
+</body>
+</html>
